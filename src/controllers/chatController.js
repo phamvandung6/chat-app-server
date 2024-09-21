@@ -1,59 +1,93 @@
-const Message = require('../models/messageModel');
-const Group = require('../models/groupModel');
-const User = require('../models/userModel');
-const logger = require('../config/logger');
+const Message = require("../models/messageModel");
+const Room = require("../models/roomModel");
+const User = require("../models/userModel");
+const logger = require("../config/logger");
 
-exports.saveMessage = async (req, res) => {
-    const { recipient, sender, content } = req.body; // Include recipient
-    try {
-        // Check if the recipient is valid
-        const recipientUser = await User.findById(recipient);
-        if (!recipientUser) {
-            return res.status(404).json({ message: 'Recipient not found' });
-        }
+exports.sendMessage = async (req, res) => {
+  const { room, content, type } = req.body; // Thêm type vào body
+  const sender = req.user.id;
 
-        // Check if a group already exists between the sender and recipient
-        let group = await Group.findOne({
-            members: { $all: [sender, recipient] } // Check for both members
-        });
+  const message = new Message({ sender, room, content, type });
 
-        // If no group exists, create a new one
-        if (!group) {
-            group = new Group({
-                name: `Chat between ${sender} and ${recipient}`,
-                members: [sender, recipient]
-            });
-            await group.save();
-        }
-
-        // Create a new message in the found or newly created group
-        const message = new Message({ room: group._id, sender, content });
-        await message.save();
-        res.status(201).json(message);
-    } catch (error) {
-        logger.error('Error saving message: ', { error });
-        res.status(500).json({ message: 'Error saving message' });
-    }
+  try {
+    await message.save();
+    res
+      .status(201)
+      .json({ message: "Message sent successfully", data: message });
+  } catch (error) {
+    res.status(500).json({ message: "Error sending message" });
+  }
 };
 
 exports.getMessages = async (req, res) => {
-    const { room } = req.params;
-    try {
-        const messages = await Message.find({ room }).populate('sender');
-        res.status(200).json(messages);
-    } catch (error) {
-        logger.error('Error fetching messages: ', { error });
-        res.status(500).json({ message: 'Error fetching messages' });
-    }
+  const { room } = req.params;
+
+  try {
+    const messages = await Message.find({ room }).populate(
+      "sender",
+      "username"
+    );
+    res.status(200).json(messages);
+  } catch (error) {
+    logger.error(error);
+    res.status(500).json({ message: "Error retrieving messages" });
+  }
+};
+
+exports.createRoom = async (req, res) => {
+  const { roomName, members } = req.body;
+  const userId = req.user.id;
+
+  if (!members || members.length < 1) {
+    return res
+      .status(400)
+      .json({ message: "At least one member is required." });
+  }
+
+  if (!members.includes(userId)) {
+    members.push(userId);
+  }
+
+  const room = new Room({
+    name: roomName,
+    createdBy: userId,
+    members: members,
+  });
+
+  try {
+    await room.save();
+    // Update each member's rooms array
+    await User.updateMany(
+      { _id: { $in: members } },
+      { $addToSet: { rooms: room._id } }
+    );
+    res.status(201).json({ message: "Room created successfully", data: room });
+  } catch (error) {
+    logger.error(error);
+    res.status(500).json({ message: "Error creating room" });
+  }
+};
+
+exports.getRooms = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const rooms = await Room.find({ members: userId });
+    res.status(200).json(rooms);
+  } catch (error) {
+    logger.error(error);
+    res.status(500).json({ message: "Error retrieving rooms" });
+  }
 };
 
 exports.deleteMessage = async (req, res) => {
-    const { id } = req.params;
-    try {
-        await Message.findByIdAndDelete(id);
-        res.status(200).json({ message: 'Message deleted successfully' });
-    } catch (error) {
-        logger.error('Error deleting message: ', { error });
-        res.status(500).json({ message: 'Error deleting message' });
-    }
+  const { id } = req.params;
+
+  try {
+    await Message.findByIdAndDelete(id);
+    res.status(200).json({ message: "Message deleted successfully" });
+  } catch (error) {
+    logger.error(error);
+    res.status(500).json({ message: "Error deleting message" });
+  }
 };
