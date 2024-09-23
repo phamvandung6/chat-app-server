@@ -7,6 +7,7 @@ const userRoutes = require("./routes/userRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const dotenv = require("dotenv");
 const Message = require("./models/messageModel");
+const logger = require("./config/logger");
 
 dotenv.config();
 connectDB();
@@ -29,19 +30,29 @@ const io = socketIO(server, {
 io.on("connection", (socket) => {
   console.log(`User Connected: ${socket.id}`);
 
-  socket.on("join_room", (room) => {
-    socket.join(room);
+  socket.on("joinConversation", (conversationId) => {
+    socket.join(conversationId);
     console.log(`User with ID: ${socket.id} joined room: ${room}`);
+
+    socket.to(conversationId).emit("userJoined", {
+      userId: socket.id,
+      message: "joined the chat",
+    });
   });
 
-  socket.on("send_message", async (data) => {
-    const message = new Message({
-      sender: data.sender,
-      room: data.room,
-      content: data.content,
-    });
-    await message.save();
-    io.to(data.room).emit("receive_message", data);
+  socket.on("sendMessage", async (data) => {
+    try {
+      const message = new Message({
+        conversationId: data.conversationId,
+        sender: data.sender,
+        text: data.text,
+      });
+      await message.save();
+      io.to(data.conversationId).emit("receiveMessage", data);
+    } catch (error) {
+      logger.error(error);
+      socket.emit("error", { message: "Error sending message" });
+    }
   });
 
   socket.on("disconnect", () => {
