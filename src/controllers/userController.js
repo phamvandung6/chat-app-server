@@ -96,37 +96,33 @@ exports.refreshToken = async (req, res) => {
   if (!oldRefreshToken)
     return res.status(401).json({ message: "Refresh token required" });
 
-  // Decode the old refresh token to get the user ID
   let userId;
+  let expiresIn;
   try {
     const decoded = jwt.verify(oldRefreshToken, process.env.JWT_SECRET);
-    userId = decoded.id; // Extract user ID from the decoded token
+    userId = decoded.id;
+    expiresIn = decoded.exp - Math.floor(Date.now() / 1000); // Calculate remaining time
   } catch (error) {
     logger.error(error);
     return res.status(403).json({ message: "Invalid refresh token" });
   }
 
-  // Delete the old refresh token from Redis
   await redis.del(`refresh_token:${userId}:${session_id}`);
+  await blacklistService.addToBlacklist(oldRefreshToken, expiresIn);
 
-  // Blacklist the old refresh token
-  await blacklistService.addToBlacklist(oldRefreshToken, 60 * 60 * 24 * 7); // 7 days
-
-  // Generate new tokens
   const newAccessToken = jwt.sign({ id: userId }, process.env.JWT_SECRET, {
     expiresIn: "15m",
   });
   const newRefreshToken = jwt.sign({ id: userId }, process.env.JWT_SECRET, {
-    expiresIn: "7d",
+    expiresIn: expiresIn,
   });
 
-  // Store token in Redis
   await redis.set(
     `refresh_token:${userId}:${session_id}`,
     newRefreshToken,
     "EX",
-    60 * 60 * 24 * 7
-  ); // 7 days
+    expiresIn
+  );
 
   res.status(200).json({
     accessToken: newAccessToken,

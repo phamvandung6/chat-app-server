@@ -1,21 +1,20 @@
 const mongoose = require("mongoose");
 
-const MessageSchema = new mongoose.Schema(
+const CommentSchema = new mongoose.Schema(
   {
-    conversationId: {
+    postId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Conversation",
+      ref: "Post",
       required: true,
     },
-    sender: {
+    userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
     text: { type: String, required: true },
-    seen: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Message", MessageSchema);
+module.exports = mongoose.model("Comment", CommentSchema);
