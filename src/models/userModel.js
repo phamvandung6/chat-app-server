@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const UserSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
+  username: { type: String, sparse: true, unique: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   profilePicture: { type: String, default: "" },
@@ -10,6 +10,7 @@ const UserSchema = new mongoose.Schema({
   following: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   createdAt: { type: Date, default: Date.now },
   conversations: [{ type: mongoose.Schema.Types.ObjectId, ref: "Conversation" }],
+  isVerified: { type: Boolean, default: false },
 });
 
 module.exports = mongoose.model("User", UserSchema);
