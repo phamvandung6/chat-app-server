@@ -22,12 +22,22 @@ exports.sendMessage = async (req, res) => {
 
 exports.getMessages = async (req, res) => {
   const { conversationId } = req.params;
+  const { page = 1, limit = 20 } = req.query; // Lấy page và limit từ query parameters, mặc định page = 1 và limit = 20
+
   try {
-    const messages = await Message.find({ conversationId }).populate(
-      "sender",
-      "username"
-    );
-    res.status(200).json(messages);
+    const messages = await Message.find({ conversationId })
+      .populate("sender", "username")
+      .sort({ createdAt: -1 }) // Sắp xếp tin nhắn theo thứ tự mới nhất trước
+      .skip((page - 1) * limit) // Bỏ qua các tin nhắn của các trang trước
+      .limit(parseInt(limit)); // Giới hạn số lượng tin nhắn mỗi trang
+
+    res.status(200).json({
+      messages,
+      currentPage: page,
+      totalPages: Math.ceil(
+        (await Message.countDocuments({ conversationId })) / limit
+      ),
+    });
   } catch (error) {
     logger.error(error);
     res.status(500).json({ message: "Error retrieving messages" });
