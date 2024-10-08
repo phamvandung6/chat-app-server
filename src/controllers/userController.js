@@ -9,6 +9,13 @@ const logger = require("../config/logger");
 
 exports.registerUser = async (req, res) => {
   const { email, password } = req.body;
+
+  // Check if user already exists
+  const existingUser = await User.findOne({ email });
+  if (existingUser) {
+    return res.status(400).json({ message: "User already exists" });
+  }
+
   const hashedPassword = await bcrypt.hash(password, 10);
   const user = new User({ email, password: hashedPassword, isVerified: false });
 
@@ -24,12 +31,10 @@ exports.registerUser = async (req, res) => {
     // Send OTP via email
     await sendOtpEmail(email, otp);
 
-    res
-      .status(201)
-      .json({
-        message:
-          "User registered successfully. Please check your email for the OTP.",
-      });
+    res.status(201).json({
+      message:
+        "User registered successfully. Please check your email for the OTP.",
+    });
   } catch (error) {
     logger.error(error);
     res.status(500).json({ message: "Error registering user" });
@@ -122,7 +127,7 @@ exports.getUserProfile = async (req, res) => {
   }
 
   // If not in cache, query the database
-  const user = await User.findById(userId).select("-password -isVerified");
+  const user = await User.findById(userId).select("-password -isVerified -conversations");
 
   if (!user) {
     return res.status(404).json({ message: "User not found" });
@@ -144,7 +149,7 @@ exports.getUser = async (req, res) => {
   }
 
   // If not in cache, query the database
-  const user = await User.findById(userId).select("-password -isVerified");
+  const user = await User.findById(userId).select("-password -isVerified -conversations");
 
   if (!user) {
     return res.status(404).json({ message: "User not found" });
@@ -157,13 +162,13 @@ exports.getUser = async (req, res) => {
 };
 
 exports.updateUser = async (req, res) => {
-  const userId = req.params.userId;
+  const userId = req.user.id;
   const updates = req.body;
 
   try {
     const user = await User.findByIdAndUpdate(userId, updates, {
       new: true,
-    }).select("-password -isVerified");
+    }).select("-password -isVerified -conversations");
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -199,13 +204,10 @@ exports.logoutUser = async (req, res) => {
 };
 
 exports.refreshToken = async (req, res) => {
-  const { session_id } = req.body;
-  const oldRefreshToken = req.header("Authorization")?.split(" ")[1];
-  if (!oldRefreshToken)
-    return res.status(400).json({ message: "Refresh token required" });
+  const { session_id, refresh_token } = req.body;
 
   // Check token in blacklist
-  const isBlacklisted = await blacklistService.isBlacklisted(oldRefreshToken);
+  const isBlacklisted = await blacklistService.isBlacklisted(refresh_token);
   if (isBlacklisted) {
     return res.status(403).json({ message: "Token is blacklisted" });
   }
@@ -213,7 +215,7 @@ exports.refreshToken = async (req, res) => {
   let userId;
   let expiresIn;
   try {
-    const decoded = jwt.verify(oldRefreshToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(refresh_token, process.env.JWT_SECRET);
     if (decoded.token_type !== "refresh_token") {
       return res.status(403).json({ message: "Invalid token type" });
     }
@@ -225,7 +227,7 @@ exports.refreshToken = async (req, res) => {
   }
 
   await redis.del(`refresh_token:${userId}:${session_id}`);
-  await blacklistService.addToBlacklist(oldRefreshToken, expiresIn);
+  await blacklistService.addToBlacklist(refresh_token, expiresIn);
 
   const newAccessToken = jwt.sign(
     { id: userId, token_type: "access_token" },
